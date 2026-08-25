@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="我的世界">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-512.png">
+<title>网页版我的世界 - v3</title>
+<style>
+  body { margin:0; overflow:hidden; font-family:"PingFang SC","Microsoft YaHei",sans-serif; background:#000; user-select:none; }
+  /* ===== HUD 层 ===== */
+  #hud { position:fixed; top:12px; left:14px; color:#fff; text-shadow:1px 1px 2px #000; font-size:14px; line-height:1.5; z-index:10; pointer-events:none; }
+  #hud .mode { display:inline-block; padding:2px 10px; border-radius:10px; font-weight:bold; font-size:13px; }
+  #hud .mode.survival { background:#d9534f; }
+  #hud .mode.creative { background:#5cb85c; }
+  #health { position:fixed; top:40px; left:14px; font-size:20px; z-index:10; letter-spacing:2px; text-shadow:0 0 3px #000; pointer-events:none; }
+  #coords { position:fixed; bottom:12px; left:14px; color:#cfc; font-size:12px; text-shadow:1px 1px 2px #000; z-index:10; pointer-events:none; line-height:1.5; }
+  #crosshair { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); color:#fff; font-size:24px; text-shadow:0 0 4px #000; z-index:10; pointer-events:none; }
+  #crosshair span { position:absolute; left:50%; top:100%; transform:translateX(-50%); font-size:12px; margin-top:6px; white-space:nowrap; text-shadow:0 0 3px #000; }
+  #msg { position:fixed; bottom:86px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(0,0,0,.55); padding:5px 14px; border-radius:14px; font-size:14px; z-index:10; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #msg.show { opacity:1; }
+  #hotbar { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); display:flex; gap:5px; z-index:10; pointer-events:none; }
+  .slot { width:52px; height:52px; border:3px solid rgba(255,255,255,.45); border-radius:6px; background:rgba(0,0,0,.45); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; }
+  .slot canvas { image-rendering:pixelated; width:26px; height:26px; }
+  .slot .n { color:#fff; font-size:11px; font-weight:bold; text-shadow:1px 1px 1px #000; }
+  .slot .cnt { color:#fff; font-size:12px; font-weight:bold; text-shadow:1px 1px 1px #000; position:absolute; right:3px; bottom:1px; }
+  .slot.active { border-color:#ffd83d; box-shadow:0 0 10px #ffd83d; }
+  .slot.disabled { opacity:.45; }
+  #sound { position:fixed; top:12px; right:14px; z-index:20; background:rgba(0,0,0,.5); color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:8px; padding:4px 10px; font-size:15px; cursor:pointer; }
+  #overlay { position:fixed; inset:0; background:rgba(8,12,30,.88); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:100; text-align:center; }
+  #overlay h1 { font-size:34px; margin:0 0 6px; letter-spacing:2px; text-shadow:0 0 20px #4a9; }
+  #overlay .sub { color:#9cf; margin-bottom:18px; }
+  #overlay table { border-collapse:collapse; font-size:14px; color:#ddd; line-height:1.9; margin-bottom:22px; }
+  #overlay td { padding:1px 10px; }
+  #overlay td:first-child { text-align:right; color:#ffd83d; font-family:monospace; }
+  #overlay .btn { padding:12px 44px; font-size:18px; border:none; border-radius:10px; cursor:pointer; background:#4a9; color:#fff; font-weight:bold; letter-spacing:2px; }
+  #overlay .btn:hover { background:#5bc; }
+  #dbg { position:fixed; top:4px; left:50%; transform:translateX(-50%); color:#ff6; font-size:12px; z-index:200; background:rgba(0,0,0,.6); padding:2px 8px; border-radius:6px; display:none; }
+  /* 锁横屏提示层: 默认隐藏;触屏竖屏时盖住游戏 */
+  #rotate-overlay { position:fixed; inset:0; z-index:300; display:none; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:#0a0f0c; color:#fff; text-align:center; }
+  #rotate-overlay .ro-icon { font-size:72px; animation:ro-spin 2s ease-in-out infinite; }
+  @keyframes ro-spin { 0%,100%{ transform:rotate(0deg); } 50%{ transform:rotate(90deg); } }
+  #rotate-overlay .ro-t1 { font-size:26px; font-weight:bold; letter-spacing:4px; text-shadow:0 0 16px #4a9; }
+  #rotate-overlay .ro-t2 { font-size:15px; color:#9cf; }
+  @media (orientation: portrait) and (pointer: coarse) {
+    #rotate-overlay { display:flex; }
+  }
+  /* ===== 触屏控制(默认隐藏,检测到触屏才显示) ===== */
+  #joystick-zone { position:fixed; left:0; bottom:0; width:40%; height:46%; z-index:30; touch-action:none; display:none; }
+  #joystick-base { position:absolute; left:70px; bottom:70px; width:110px; height:110px; border-radius:50%; background:rgba(255,255,255,.12); border:2px solid rgba(255,255,255,.25); box-sizing:border-box; }
+  #joystick-knob { position:absolute; left:50%; top:50%; width:52px; height:52px; transform:translate(-50%,-50%); border-radius:50%; background:rgba(255,255,255,.35); border:2px solid rgba(255,255,255,.5); box-sizing:border-box; }
+  #look-zone { position:fixed; right:0; bottom:0; width:60%; height:46%; z-index:25; touch-action:none; display:none; }
+  /* 右摇杆: 转视角(MC PE 双摇杆布局)。独立固定控件,不吃浏览器手势 */
+  #look-joystick-zone { position:fixed; right:0; bottom:0; width:40%; height:46%; z-index:31; touch-action:none; display:none; }
+  #look-joystick-base { position:absolute; right:70px; bottom:70px; width:110px; height:110px; border-radius:50%; background:rgba(255,255,255,.12); border:2px solid rgba(255,255,255,.25); box-sizing:border-box; }
+  #look-joystick-knob { position:absolute; left:50%; top:50%; width:52px; height:52px; transform:translate(-50%,-50%); border-radius:50%; background:rgba(255,255,255,.35); border:2px solid rgba(255,255,255,.5); box-sizing:border-box; }
+  #touch-actions { position:fixed; right:95px; bottom:196px; z-index:28; display:none; flex-direction:column; gap:10px; }
+  #touch-actions button { width:60px; height:60px; border-radius:50%; border:2px solid rgba(255,255,255,.35); background:rgba(255,255,255,.15); color:#fff; font-size:26px; line-height:1; touch-action:none; }
+  #touch-actions button:active { background:rgba(255,255,255,.35); }
+  .touched #joystick-zone, .touched #look-joystick-zone, .touched #look-zone, .touched #touch-actions { display:block; }
+  .touched #touch-actions { display:flex; }
+  .touched #crosshair { display:none; }
+  /* 竖屏: 动作按钮竖排、水平对齐右摇杆中心(右摇杆 base right:70px 宽110 → 中心离右缘125px;按钮组 right:95px 宽60 → 中心也是125px)。
+     顺序 [挖, 放, 跳],跳在最上 = 正对右摇杆上方(bottom:196px → 跳底缘在摇杆顶180px 上方16px);挖/放在下、水平对齐摇杆、离摇杆近 */
+  @media (orientation: portrait) and (pointer: coarse) {
+    #touch-actions { right:95px; bottom:196px; flex-direction:column; gap:10px; }
+  }
+  /* 横屏: 挖/放按钮横排底部居中(left:0;right:0+justify-content 居中,不用 transform —— transform 会让内部 fixed 的跳跃按钮定位基准错乱);
+     跳跃按钮用屏幕坐标精确放 (87%, 70%)(translate(-50%,-50%) 使按钮中心落在该点) */
+  @media (orientation: landscape) and (pointer: coarse) {
+    #touch-actions { left:0; right:0; bottom:26px; transform:none; flex-direction:row; gap:16px; justify-content:center; }
+    #touch-actions button { width:58px; height:58px; font-size:24px; }
+    #btn-jump { position:fixed; left:87%; top:37%; transform:translate(-50%,-50%); }
+  }
+  /* 触屏: 热栏可点(桌面用 1-9/滚轮,手机只能点)。放顶部避免遮挡底部摇杆/视角滑动区 */
+  .touched #hotbar { pointer-events:auto; z-index:50; top:64px; bottom:auto; gap:2px; }
+  .touched #hotbar .slot { width:32px; height:38px; border-width:2px; }
+  .touched #hotbar .slot canvas { width:16px; height:16px; }
+  .touched #hotbar .slot .n { display:none; }
+</style>
+</head>
+<body>
+<div id="hud"><span class="mode creative" id="modeBadge">创造</span></div>
+<div id="health"></div>
+<div id="coords">x:0 y:0 z:0<br>FPS:-- 方块:--</div>
+<div id="crosshair">+<span id="target"></span></div>
+<div id="msg"></div>
+<div id="hotbar"></div>
+<button id="sound">🔊</button>
+<div id="dbg">加载中...</div>
+
+<!-- 触屏控制: 左摇杆移动 + 右摇杆转视角 + 视角区(双指放方块) + 动作按钮(JS 检测到触屏才显示) -->
+<div id="joystick-zone"><div id="joystick-base"><div id="joystick-knob"></div></div></div>
+<div id="look-joystick-zone"><div id="look-joystick-base"><div id="look-joystick-knob"></div></div></div>
+<div id="look-zone"></div>
+<div id="touch-actions">
+  <button id="btn-mine" title="挖">⛏</button>
+  <button id="btn-place" title="放">🧱</button>
+  <button id="btn-jump" title="跳/上浮">⤒</button>
+</div>
+
+<div id="overlay">
+  <h1>⛏ 网页版我的世界 v3.13</h1>
+  <div class="sub">出品:艾哥</div>
+  <div class="sub">纯前端 · 程序生成地形 · 昼夜循环 · 生存/创造双模式</div>
+  <table>
+    <tr><td>W A S D</td><td>移动</td><td>空格</td><td>跳 / 游泳上浮</td></tr>
+    <tr><td>鼠标</td><td>转视角</td><td>Ctrl</td><td>冲刺</td></tr>
+    <tr><td>左键</td><td>挖方块</td><td>右键</td><td>放方块</td></tr>
+    <tr><td>1-9 / 滚轮</td><td>选方块</td><td>C</td><td>生存 ⇄ 创造</td></tr>
+    <tr><td>F</td><td>创造飞行</td><td>M</td><td>静音</td></tr>
+  </table>
+  <table id="touch-help" style="display:none">
+    <tr><td>左摇杆</td><td>移动</td><td>右摇杆</td><td>转视角</td></tr>
+    <tr><td>⤒</td><td>跳 / 上浮</td><td>⛏ 挖</td><td>🧱 放</td></tr>
+    <tr><td>双指</td><td>放方块</td><td>点热栏</td><td>选方块</td></tr>
+  </table>
+  <button class="btn" id="startBtn">点击开始游戏</button>
+  <div class="sub" style="margin-top:10px">默认创造模式(无限方块+可飞行);按 C 体验生存:挖方块收集、小心摔伤、夜晚天会黑</div>
+</div>
+
+<!-- 锁横屏提示层: 触屏设备竖屏时盖住整个游戏,提示转横屏(网页无法真锁屏,只能提示+遮挡;安卓打包时再在 AndroidManifest 锁 landscape) -->
+<div id="rotate-overlay">
+  <div class="ro-icon">📱</div>
+  <div class="ro-t1">请横屏游玩</div>
+  <div class="ro-t2">把手机转过来,体验最佳</div>
+</div>
+
+<script>
+  // 错误直接显示在页面上,绝不静默白屏
+  window.onerror = function(msg, src, line){
+    var el = document.getElementById('dbg');
+    el.style.display = 'block';
+    el.textContent = '❌ ' + msg + ' @line' + line;
+  };
+  // 异步 Promise 拒绝也要显示真实原因(不然浏览器只报 "Script error @line0")
+  window.addEventListener('unhandledrejection', function(e){
+    var el = document.getElementById('dbg');
+    el.style.display = 'block';
+    var r = e.reason;
+    el.textContent = '❌ 异步错误: ' + (r && r.message ? r.message : String(r));
+  });
+</script>
+<script>
+/*__THREE_JS__*/
+</script>
+<script>
+'use strict';
+// =====================================================================
+//  网页版我的世界 v3 —— 结构总览(先看骨架再看细节)
+//  1. 基础场景: 场景/相机/渲染器/灯光
+//  2. 纹理图集: 用 canvas 程序画 16x16 像素贴图(草/土/石/沙/木/叶/板/基岩/圆石/水)
+//  3. 方块定义 + 每个方块的「各面贴图」UV 重写(这是 MC 质感的关键)
+//  4. 噪声地形: 值噪声 fBm 生成起伏,海边沙滩、水下沙底、树
+//  5. 渲染: 每种方块一个 InstancedMesh(一次绘制几百上千个方块,性能核心)
+//  6. 天空: 渐变天穹 + 太阳/月亮/星星 + 云 + 昼夜循环
+//  7. 玩家: 走路/跳/冲刺/飞行(创造)/游泳(水中)/摔落伤害
+//  8. 交互: DDA 体素拾取 + 挖/放 + 背包计数
+//  9. 音效: WebAudio 程序合成,零外部素材
+// 10. HUD + 主循环
+// =====================================================================
+
+// ---------- 1. 基础场景 ----------
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x88c4ee, 60, 130);   // 雾色随昼夜同步变
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1200);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const skyColor = new THREE.Color(0x88c4ee);
+scene.background = skyColor;
+
+// 灯光: 环境光 + 太阳(平行光) + 月亮(平行光,夜里才亮)
+const ambient = new THREE.AmbientLight(0xffffff, 0.75);
+const sunLight = new THREE.DirectionalLight(0xfff2dd, 1.2);
+const moonLight = new THREE.DirectionalLight(0x8fa4ff, 0);
+scene.add(ambient, sunLight, moonLight);
+
+// ---------- 2. 程序化像素纹理图集 ----------
+// 像 MC 一样: 贴图就 16x16 像素一格,全部用代码画出来,不加载任何图片文件
+const S = 16, COLS = 6, ROWS = 2;                 // 图集 6x2 = 12 格
+const atlas = document.createElement('canvas');
+atlas.width = S*COLS; atlas.height = S*ROWS;
+const pctx = atlas.getContext('2d');
+
+// 贴图格索引(图集里的位置)
+const T_GRASS_TOP=0, T_GRASS_SIDE=1, T_DIRT=2, T_STONE=3, T_SAND=4,
+      T_LOG_SIDE=5, T_LOG_TOP=6, T_LEAVES=7, T_PLANKS=8, T_BEDROCK=9,
+      T_COBBLE=10, T_WATER=11;
+
+// 独立随机源,保证每次打开纹路一致(确定性)
+let rngSeed = 20260824;
+function rnd(){ rngSeed = (rngSeed*16807) % 2147483647; return rngSeed/2147483647; }
+
+// 在某个贴图格里画一个像素
+function px(tile, x, y, r, g, b){
+  pctx.fillStyle = 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
+  pctx.fillRect((tile%COLS)*S + x, Math.floor(tile/COLS)*S + y, 1, 1);
+}
+// fn(x,y) 返回 [r,g,b] 就画,返回 null 跳过
+function drawTile(tile, fn){
+  for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+    const c = fn(x,y);
+    if(c) px(tile, x, y, c[0], c[1], c[2]);
+  }
+}
+const jit = amt => (rnd()-0.5)*amt;   // 随机抖动,让纯色变有颗粒感
+
+// 草皮: 绿色噪点,偶尔亮绿
+drawTile(T_GRASS_TOP, (x,y)=>{
+  const g = 88 + rnd()*40;
+  if(rnd()<0.06) return [g*0.75+30, g*1.3, g*0.5];
+  return [g*0.62, g*1.05, g*0.35];
+});
+// 草侧: 顶部 3 行草,下面泥土(仿 MC 草方块侧面那条绿)
+drawTile(T_GRASS_SIDE, (x,y)=>{
+  if(y<3 && rnd()<0.85){ const g=95+rnd()*35; return [g*0.62, g*1.05, g*0.35]; }
+  return [140+jit(40), 90+jit(30), 50+jit(20)];
+});
+// 泥土
+drawTile(T_DIRT, ()=>[140+jit(50), 90+jit(35), 50+jit(22)]);
+// 石头: 灰底 + 少量深色裂纹
+drawTile(T_STONE, (x,y)=>{
+  const v = 127 + jit(24);
+  if(rnd()<0.03) return [v*0.5, v*0.5, v*0.5];
+  return [v, v, v];
+});
+// 沙子
+drawTile(T_SAND, ()=>[212+jit(26), 198+jit(24), 152+jit(26)]);
+// 原木侧面: 棕色 + 竖条树皮纹
+drawTile(T_LOG_SIDE, (x,y)=>{
+  const v = 104 + jit(18);
+  if(((x*7)%9)===0 || rnd()<0.08) return [v*0.6, v*0.55, v*0.5];
+  return [v, v*0.64, v*0.33];
+});
+// 原木截面: 同心方框 = 年轮
+drawTile(T_LOG_TOP, (x,y)=>{
+  const d = Math.max(Math.abs(x-7.5), Math.abs(y-7.5));
+  return [150 - d*11 + jit(22), 115 - d*9 + jit(18), 70 - d*6 + jit(14)];
+});
+// 树叶: 深绿 + 暗洞 + 亮斑
+drawTile(T_LEAVES, ()=>{
+  if(rnd()<0.12) return [22, 72, 18];
+  if(rnd()<0.06) return [82, 172, 55];
+  return [42, 120, 28];
+});
+// 木板: 横排木条,接缝处深色
+drawTile(T_PLANKS, (x,y)=>{
+  const board = Math.floor(y/4);
+  const seam = (y%4===0) ? 55 : 0;
+  const v = (x + board*4) % 16;
+  return [120 + v*3 - seam, 86 + v*2 - seam, 46 + v*2 - seam];
+});
+// 基岩: 重噪的深灰
+drawTile(T_BEDROCK, ()=>{
+  const v = 92 + jit(72);
+  return [v, v, v];
+});
+// 圆石: 4x4 石块拼缝(挖石头得到它)
+drawTile(T_COBBLE, (x,y)=>{
+  const bx = x%4, by = y%4;
+  if(bx===0 || by===0) return [66,66,66];
+  const cell = ((Math.floor(x/4)*7 + Math.floor(y/4)*13) % 5);
+  const base = 118 + cell*12 + jit(16);
+  return [base, base, base];
+});
+// 水: 蓝底 + 亮波
+drawTile(T_WATER, (x,y)=>{
+  if(y<2) return [98,156,236];
+  if(rnd()<0.06) return [118,172,242];
+  return [63,111,207];
+});
+
+// ---------- 3. 方块定义 + 各面贴图 UV ----------
+// 每个方块: top 顶面贴图 / bottom 底面 / side 侧面(MC 精髓:同方块不同面不同纹)
+const BLOCKS = [
+  null, // 0 = 空气
+  { name:'草方块', top:T_GRASS_TOP,  bottom:T_DIRT,     side:T_GRASS_SIDE },
+  { name:'泥土',   top:T_DIRT,       bottom:T_DIRT,     side:T_DIRT },
+  { name:'石头',   top:T_STONE,      bottom:T_STONE,    side:T_STONE },
+  { name:'沙子',   top:T_SAND,       bottom:T_SAND,     side:T_SAND },
+  { name:'原木',   top:T_LOG_TOP,    bottom:T_LOG_TOP,  side:T_LOG_SIDE },
+  { name:'树叶',   top:T_LEAVES,     bottom:T_LEAVES,   side:T_LEAVES },
+  { name:'木板',   top:T_PLANKS,     bottom:T_PLANKS,   side:T_PLANKS },
+  { name:'基岩',   top:T_BEDROCK,    bottom:T_BEDROCK,  side:T_BEDROCK },
+  { name:'圆石',   top:T_COBBLE,     bottom:T_COBBLE,   side:T_COBBLE },
+];
+// 挖到手的掉落物映射(MC 传统: 挖石头得圆石、挖草得泥土)
+const DROPS  = { 1:2, 2:2, 3:9, 4:4, 5:5, 6:6, 7:7, 9:9 };
+const PCOLOR = { 1:0x5fae2e, 2:0x8a5a32, 3:0x8a8a8a, 4:0xdcd0a3, 5:0x6b4423,
+                 6:0x2e7d1f, 7:0xb58a4f, 8:0x444444, 9:0x9a9a9a }; // 粒子颜色
+
+// 某个贴图格在图集里的 UV 范围(返回 [u0,v0,u1,v1],v0=下边 v1=上边)
+function tileUV(i){
+  const col = i%COLS, row = (i/COLS)|0;
+  const u0 = col/COLS, u1 = (col+1)/COLS;
+  const v0 = 1-(row+1)/ROWS, v1 = 1-row/ROWS;
+  return [u0, v0, u1, v1];
+}
+// 按「顶/底/侧」三块贴图,重写一个 1x1x1 方块的 UV 属性
+// three.js BoxGeometry 的 24 个顶点按面分组: 0:+x 1:-x 2:+y(顶) 3:-y(底) 4:+z 5:-z
+function boxUVs(top, bottom, side){
+  const uv = new Float32Array(24*2);
+  const faces = [side, side, top, bottom, side, side];
+  for(let f=0; f<6; f++){
+    const t = tileUV(faces[f]);
+    const base = f*4*2;
+    uv[base+0]=t[0]; uv[base+1]=t[3];   // 左上
+    uv[base+2]=t[2]; uv[base+3]=t[3];   // 右上
+    uv[base+4]=t[0]; uv[base+5]=t[1];   // 左下
+    uv[base+6]=t[2]; uv[base+7]=t[1];   // 右下
+  }
+  return uv;
+}
+
+// ---------- 4. 噪声地形生成 ----------
+// 值噪声: 在网格点上放随机数,中间平滑插值。fBm=多个频率叠加 → 既平滑又有细节
+const W = 96, D = 96, SEA = 15;          // 世界大小 / 海平面
+const seed = 7;
+function hash2(x, z, s){
+  let h = (s*374761393 + x*668265263 + z*1440662683) | 0;
+  h = (h ^ (h>>>13)) * 1274126177 | 0;
+  return ((h ^ (h>>>16)) >>> 0) / 4294967296;
+}
+function noise2(x, z, s){
+  const xi = Math.floor(x), zi = Math.floor(z);
+  const xf = x-xi, zf = z-zi;
+  const u = xf*xf*(3-2*xf), v = zf*zf*(3-2*zf);   // smoothstep 平滑
+  const a = hash2(xi,zi,s), b = hash2(xi+1,zi,s);
+  const c = hash2(xi,zi+1,s), d = hash2(xi+1,zi+1,s);
+  return a + (b-a)*u + (c-a)*v + (a-b-c+d)*u*v;
+}
+function fbm(x, z, oct, s){
+  let sum=0, amp=0.5, f=1, tot=0;
+  for(let i=0;i<oct;i++){ sum += noise2(x*f, z*f, s+i*101)*amp; tot+=amp; amp*=0.5; f*=2; }
+  return sum/tot;   // 0..1
+}
+// 列高: 大起伏 + 小细节,海平面 SEA 附近会有沙滩/湖泊
+const heightAt = new Uint8Array(W*D);
+function genHeight(x, z){
+  const m = fbm(x*0.045, z*0.045, 4, seed);
+  const d = fbm(x*0.12+7, z*0.12+3, 3, seed+11);
+  return Math.max(2, Math.min(36, Math.round(4 + m*17 + d*3)));
+}
+
+// 世界数据: key -> 方块类型;水不是方块,是一个渲染出来的平面
+const world = new Map();
+const vkey = (x,y,z) => x+','+y+','+z;
+function buildWorld(){
+  for(let x=0; x<W; x++) for(let z=0; z<D; z++){
+    const h = genHeight(x,z);
+    heightAt[z*W+x] = h;
+    world.set(vkey(x,0,z), 8);                       // 基岩铺底
+    const beach = (h <= SEA+1);                      // 海平面附近的沙滩/水下沙
+    for(let y=1; y<h; y++){
+      const t = (y >= h-3) ? (beach ? 4 : 2)         // 表层下 3 格: 沙或泥土
+                           : 3;                       // 更深处: 石头
+      world.set(vkey(x,y,z), t);
+    }
+    world.set(vkey(x,h,z), beach ? 4 : 1);           // 表面: 沙或草
+  }
+  // 树: 长在草地上,离出生点远一点,彼此别挨着
+  let trees = 0;
+  for(let tries=0; tries<400 && trees<45; tries++){
+    const x = 2 + (rnd()* (W-6))|0, z = 2 + (rnd()*(D-6))|0;
+    const h = heightAt[z*W+x];
+    if(world.get(vkey(x,h,z)) !== 1) continue;       // 只要草地
+    if(Math.abs(x-W/2) < 12 && Math.abs(z-D/2) < 12) continue;
+    if(world.get(vkey(x,h+1,z)) !== undefined) continue;
+    // 树干 5 格
+    for(let y=h+1; y<=h+5; y++) world.set(vkey(x,y,z), 5);
+    // 树叶: 顶两层半径 2 的球冠
+    for(let dx=-2; dx<=2; dx++) for(let dz=-2; dz<=2; dz++) for(let dy=3; dy<=5; dy++){
+      const nx = x+dx, nz = z+dz;
+      if(nx<0||nx>=W||nz<0||nz>=D) continue;
+      if(Math.abs(dx)+Math.abs(dz)+Math.abs(dy-4) <= 3 && !(dx===0&&dz===0&&dy<5)){
+        if(!world.has(vkey(nx, h+dy, nz))) world.set(vkey(nx, h+dy, nz), 6);
+      }
+    }
+    trees++;
+  }
+}
+
+// ===== 地标建筑: 山 / 参天大树 / 哈利波特风城堡(都是直接写 world 数据,灌实例统一在 buildWorld 之后) =====
+const PEAKS = [ [70,18,13,16], [18,72,11,13], [62,76,9,10] ];   // 山心 x,z / 半径 / 中心抬升
+const BIG_TREE = { x:70, z:70 };
+const CASTLE = { x0:0, z0:0, base:0 };                          // 找平地后填充
+function buildMountains(){
+  for(const [cx,cz,r,lift] of PEAKS){
+    for(let x=Math.max(1,cx-r-2); x<=Math.min(W-2,cx+r+2); x++)
+    for(let z=Math.max(1,cz-r-2); z<=Math.min(D-2,cz+r+2); z++){
+      const d = Math.hypot(x-cx, z-cz);
+      if(d > r) continue;
+      const up = Math.round(lift * Math.exp(-(d*d)/(r*r*0.32)));
+      if(up <= 0) continue;
+      const cur = heightAt[z*W+x];
+      const nh = cur + up;
+      for(let y=cur+1; y<=nh; y++) world.set(vkey(x,y,z), 3);   // 石头堆出山体
+      world.set(vkey(x,nh,z), up>=5 ? 9 : 3);                   // 高耸处山顶圆石,矮处裸岩
+      heightAt[z*W+x] = nh;
+    }
+  }
+}
+function buildBigTree(){
+  const bx=BIG_TREE.x, bz=BIG_TREE.z, h=heightAt[bz*W+bx];
+  const cx=bx+1, cz=bz+1;                                       // 2x2 树干的中心
+  for(let dy=1; dy<=30; dy++)                                    // 树干 2x2 高 30
+    for(let dx=0; dx<2; dx++) for(let dz=0; dz<2; dz++)
+      world.set(vkey(bx+dx, h+dy, bz+dz), 5);
+  for(let dy=20; dy<=31; dy++){                                  // 树冠: 大球冠层叠
+    const rr = dy<=24 ? 5 : (dy<=28 ? 4 : 3);
+    for(let dx=-rr; dx<=rr; dx++) for(let dz=-rr; dz<=rr; dz++){
+      const d = Math.hypot(dx,dz);
+      if(d > rr-0.4) continue;
+      const nx=cx+dx, nz=cz+dz;
+      if(nx<1||nx>=W-1||nz<1||nz>=D-1) continue;
+      if(world.has(vkey(nx, h+dy, nz))) continue;                // 不盖树干
+      world.set(vkey(nx, h+dy, nz), 6);
+    }
+  }
+  for(let dy=32; dy<=34; dy++) world.set(vkey(cx, h+dy, cz), 6); // 树冠尖顶
+}
+function buildCastle(){
+  // 1) 找一块 16x11 平地(起伏<=2),离出生点>15,否则用固定位置
+  let X0=-1, Z0=-1, base=0;
+  for(let x0=3; x0<W-19; x0++) for(let z0=3; z0<D-14; z0++){
+    let mn=99, mx=0;
+    for(let x=x0; x<x0+16; x++) for(let z=z0; z<z0+11; z++){
+      const h=heightAt[z*W+x]; if(h<mn)mn=h; if(h>mx)mx=h;
+    }
+    if(mx-mn<=2 && Math.abs(x0+8-W/2)>15 && Math.abs(z0+5-D/2)>15){ X0=x0; Z0=z0; base=mn; break; }
+  }
+  if(X0<0){ X0=18; Z0=18; base=heightAt[Z0*W+X0]; }
+  CASTLE.x0=X0; CASTLE.z0=Z0; CASTLE.base=base;
+  const top = base+1;
+  // 2) 平台: 区域填到 top,表面圆石
+  for(let x=X0-1; x<=X0+16; x++) for(let z=Z0-1; z<=Z0+11; z++){
+    if(x<1||x>=W-1||z<1||z>=D-1) continue;
+    const h=heightAt[z*W+x];
+    for(let y=h+1; y<=top; y++) world.set(vkey(x,y,z), 9);
+    world.set(vkey(x,top,z), 9);
+    heightAt[z*W+x]=top;
+  }
+  // 3) 主楼: 12x7, 墙高 8(石/圆石混砌)
+  const wx0=X0+2, wz0=Z0+2, ww=12, wd=7, wh=8;
+  for(let y=top+1; y<=top+wh; y++){
+    for(let x=wx0; x<wx0+ww; x++){
+      world.set(vkey(x,wz0,y), ((x+y)%3===0)?9:3);
+      world.set(vkey(x,wz0+wd-1,y), ((x+y)%3===0)?9:3);
+    }
+    for(let z=wz0; z<wz0+wd; z++){
+      world.set(vkey(wx0,z,y), ((z+y)%3===0)?9:3);
+      world.set(vkey(wx0+ww-1,z,y), ((z+y)%3===0)?9:3);
+    }
+  }
+  // 4) 城垛: 墙顶外圈一圈木板(突出 1 格)
+  for(let x=wx0-1; x<=wx0+ww; x++){
+    world.set(vkey(x,wz0-1,top+wh+1), 7);
+    world.set(vkey(x,wz0+wd,top+wh+1), 7);
+  }
+  for(let z=wz0-1; z<=wz0+wd; z++){
+    world.set(vkey(wx0-1,z,top+wh+1), 7);
+    world.set(vkey(wx0+ww,z,top+wh+1), 7);
+  }
+  // 5) 门(正面南侧中央 2x3 门洞,基岩门框)+ 门前台阶
+  const gx = wx0 + (ww>>1) - 1, gz = wz0 + wd - 1;
+  for(let y=top+1; y<=top+3; y++) for(let dx=0; dx<2; dx++) world.delete(vkey(gx+dx, gz, y));
+  for(let dx=-1; dx<3; dx++){ world.set(vkey(gx+dx, gz, top+4), 8); if(dx<0||dx>1) for(let y=top+1; y<=top+3; y++) world.set(vkey(gx+dx, gz, y), 8); }
+  for(let s=1; s<=3; s++) for(let dx=0; dx<2; dx++) world.set(vkey(gx+dx, gz+s, top-s+1), 9);
+  // 6) 窗户: 四面外立面隔 2 格挖 1x1 窗洞(y=top+3..top+5)
+  for(let y=top+3; y<=top+5; y++){
+    for(let x=wx0+2; x<wx0+ww-2; x+=3){
+      world.delete(vkey(x,wz0,y)); world.delete(vkey(x,wz0+wd-1,y));
+    }
+    for(let z=wz0+2; z<wz0+wd-2; z+=3){
+      world.delete(vkey(wx0,z,y)); world.delete(vkey(wx0+ww-1,z,y));
+    }
+  }
+  // 7) 四角塔 3x3 高 15,顶部圆石尖顶(哈利波特尖塔)
+  const cornerT = (cx,cz)=>{
+    for(let y=top+1; y<=top+15; y++)
+      for(let dx=0; dx<3; dx++) for(let dz=0; dz<3; dz++)
+        world.set(vkey(cx+dx, y, cz+dz), (y%3===0)?9:3);
+    for(let dy=1; dy<=3; dy++){           // 尖顶逐层收窄,中心对齐(塔中心 cx+1,cz+1)
+      const s = dy===1?1:0;
+      for(let dx=-s; dx<=s; dx++) for(let dz=-s; dz<=s; dz++)
+        world.set(vkey(cx+1+dx, top+15+dy, cz+1+dz), 9);
+    }
+    world.set(vkey(cx+1, top+18, cz+1), 7);   // 尖顶 1 个木板尖
+  };
+  cornerT(wx0, wz0); cornerT(wx0+ww-3, wz0); cornerT(wx0, wz0+wd-3); cornerT(wx0+ww-3, wz0+wd-3);
+  // 8) 主塔(钟楼)5x5 高 24,正面中央,顶部 4 层收成尖
+  const tx0 = wx0 + (ww>>1) - 2, tz0 = wz0 + wd - 1, th = 24;
+  for(let y=top+1; y<=top+th; y++)
+    for(let dx=0; dx<5; dx++) for(let dz=0; dz<5; dz++)
+      world.set(vkey(tx0+dx, y, tz0+dz), (y%4===0)?9:3);
+  for(let dy=1; dy<=4; dy++){               // 收成尖顶(每层收 1,中心 2x2 → 1x1)
+    const s = dy<=2 ? 2 : (dy===3?1:0);
+    const off = dy<=2 ? 0 : (dy===3?1:2);
+    for(let dx=0; dx<s; dx++) for(let dz=0; dz<s; dz++)
+      world.set(vkey(tx0+off+dx, top+th+dy, tz0+off+dz), 9);
+  }
+  world.set(vkey(tx0+2, top+th+5, tz0+2), 8);   // 塔尖基岩黑尖
+}
+buildWorld();
+// 地标建筑: 山 / 参天大树 / 城堡(在地形和树之后、灌实例之前,新方块会被一起灌进 InstancedMesh)
+buildMountains();
+buildBigTree();
+buildCastle();
+// 出生点(世界中心的地表)
+const spawnH = heightAt[(D/2|0)*W + (W/2|0)];
+const SPAWN = new THREE.Vector3(W/2+0.5, spawnH+3, D/2+0.5);
+
+// ---------- 5. 渲染: 每种方块一个 InstancedMesh ----------
+// 一个 InstancedMesh = 用一套网格画几百上千个方块(只花一次绘制时间)。9 种方块 = 9 个网格。
+const CAP = 200000;
+const BLOCK_MAT = new THREE.MeshLambertMaterial({ map: (()=>{
+  const t = new THREE.CanvasTexture(atlas);
+  t.magFilter = THREE.NearestFilter;   // 最近邻 = 像素颗粒感(MC 味)
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  return t;
+})() });
+const dummy = new THREE.Object3D();
+class BlockLayer {
+  constructor(id){
+    const b = BLOCKS[id];
+    const geo = new THREE.BoxGeometry(1,1,1);
+    geo.setAttribute('uv', new THREE.BufferAttribute(boxUVs(b.top,b.bottom,b.side), 2));
+    this.mesh = new THREE.InstancedMesh(geo, BLOCK_MAT, CAP);
+    this.mesh.frustumCulled = false;       // 防止整批被错误裁掉
+    this.mesh.count = 0;
+    this.slots = new Map();                // key -> 实例槽位
+    this.keys  = new Array(CAP);           // 槽位 -> key(换位删除要用)
+    scene.add(this.mesh);
+  }
+  add(x,y,z){
+    const key = vkey(x,y,z);
+    if(this.slots.has(key) || this.mesh.count >= CAP) return;
+    const slot = this.mesh.count++;
+    dummy.position.set(x+0.5, y+0.5, z+0.5); dummy.updateMatrix();
+    this.mesh.setMatrixAt(slot, dummy.matrix);
+    this.keys[slot] = key; this.slots.set(key, slot);
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+  remove(x,y,z){
+    const key = vkey(x,y,z);
+    const slot = this.slots.get(key);
+    if(slot === undefined) return false;
+    const last = this.mesh.count-1;
+    if(slot !== last){   // 把最后一个实例挪进空位,保持密集
+      const m = new THREE.Matrix4();
+      this.mesh.getMatrixAt(last, m);
+      this.mesh.setMatrixAt(slot, m);
+      const lastKey = this.keys[last];
+      this.keys[slot] = lastKey; this.slots.set(lastKey, slot);
+    }
+    this.slots.delete(key);
+    this.mesh.count = last;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    return true;
+  }
+}
+const layers = [null];
+for(let i=1; i<BLOCKS.length; i++) layers.push(new BlockLayer(i));
+function addBlock(x,y,z,id){ world.set(vkey(x,y,z), id); layers[id].add(x,y,z); }
+function removeBlock(x,y,z){ const id = world.get(vkey(x,y,z)); if(!id) return; world.delete(vkey(x,y,z)); layers[id].remove(x,y,z); }
+// 关键: 把已生成的世界灌进实例网格(否则数据在但看不见)
+for(const [k, id] of world){
+  const [x,y,z] = k.split(',').map(Number);
+  layers[id].add(x,y,z);
+}
+
+// 水面: 一张大平面,贴水纹理,缓慢流动
+const waterTex = (()=>{
+  const c = document.createElement('canvas'); c.width=S; c.height=S;
+  const g = c.getContext('2d');
+  for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+    const col = (y<2)?[98,156,236] : (rnd()<0.06?[118,172,242]:[63,111,207]);
+    g.fillStyle = 'rgb('+col[0]+','+col[1]+','+col[2]+')';
+    g.fillRect(x,y,1,1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(50, 50);
+  return t;
+})();
+const water = new THREE.Mesh(
+  new THREE.PlaneGeometry(220, 220),
+  new THREE.MeshLambertMaterial({ map:waterTex, transparent:true, opacity:0.6, depthWrite:false })
+);
+water.rotation.x = -Math.PI/2;
+water.position.set(W/2, SEA+0.5, D/2);
+scene.add(water);
+
+// ---------- 6. 天空: 渐变天穹 + 太阳/月亮/星星 + 云 + 昼夜 ----------
+// 天穹: 一个巨大的内表面球,贴竖向渐变,颜色每帧乘上天色 → 白天蓝、黄昏暖、夜里黑
+const skyGrad = (()=>{
+  const c = document.createElement('canvas'); c.width=2; c.height=256;
+  const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0,0,0,256);
+  gr.addColorStop(0,'#f2f8ff');   // 顶: 亮
+  gr.addColorStop(1,'#96aacb');   // 地平线: 暗一点
+  g.fillStyle = gr; g.fillRect(0,0,2,256);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping; t.repeat.set(128,1);
+  return t;
+})();
+const skyMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(900, 32, 16),
+  new THREE.MeshBasicMaterial({ map:skyGrad, side:THREE.BackSide, fog:false, depthWrite:false })
+);
+skyMesh.renderOrder = -10;
+scene.add(skyMesh);
+
+// 太阳/月亮: Sprite 永远正对相机,用径向渐变画个光球
+function makeGlow(inner, outer){
+  const c = document.createElement('canvas'); c.width=c.height=64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32,32,4, 32,32,32);
+  gr.addColorStop(0, inner); gr.addColorStop(0.55, outer); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0,0,64,64);
+  const t = new THREE.CanvasTexture(c);
+  return new THREE.SpriteMaterial({ map:t, transparent:true, fog:false, depthWrite:false });
+}
+const sunMat = makeGlow('#fffce8', 'rgba(255,240,200,0.75)');
+const moonMat = makeGlow('#ffffff', 'rgba(220,228,255,0.6)');
+const sunSprite  = new THREE.Sprite(sunMat);  sunSprite.scale.set(46,46,1);
+const moonSprite = new THREE.Sprite(moonMat); moonSprite.scale.set(34,34,1);
+scene.add(sunSprite, moonSprite);
+
+// 星星: 300 个点撒在夜空,只在天黑时显现
+const starGeo = new THREE.BufferGeometry();
+{
+  const p = new Float32Array(300*3);
+  for(let i=0;i<300;i++){
+    const a = rnd()*Math.PI*2, e = rnd()*1.4;
+    p[i*3]   = Math.cos(a)*e*900;
+    p[i*3+1] = Math.abs(Math.sin(a))*e*900*0.4 + 20;  // 上半球
+    p[i*3+2] = Math.sin(a)*e*900;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(p,3));
+}
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+  color:0xffffff, size:1.6, sizeAttenuation:false, transparent:true,
+  opacity:0, fog:false, depthWrite:false
+}));
+scene.add(stars);
+
+// 云: 一堆小扁方块,慢慢飘
+const CLOUD_N = 160;
+const cloudMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.78, depthWrite:false });
+const clouds = new THREE.InstancedMesh(new THREE.BoxGeometry(3,0.5,3), cloudMat, CLOUD_N);
+clouds.frustumCulled = false;
+{
+  for(let i=0;i<CLOUD_N;i++){
+    dummy.position.set((rnd()-0.5)*280, 46+rnd()*4, (rnd()-0.5)*280);
+    dummy.updateMatrix();
+    clouds.setMatrixAt(i, dummy.matrix);
+  }
+  clouds.instanceMatrix.needsUpdate = true;
+}
+scene.add(clouds);
+
+// 昼夜状态
+const DAY_LEN = 100;         // 一整天多少秒
+let tod = 0.30;              // 起点 ≈ 早上 7 点
+let dayN = 1, prevTod = tod;
+const C_DAY = new THREE.Color(0x88c4ee), C_NIGHT = new THREE.Color(0x0a0f2a), C_DUSK = new THREE.Color(0xff8a5c);
+function skyStep(dt){
+  tod = (tod + dt/DAY_LEN) % 1;
+  const ang = tod*Math.PI*2;
+  const sunElev = -Math.cos(ang);               // 太阳高度: 中午+1,午夜-1
+  const dayF = Math.max(0, Math.min(1, (sunElev+0.22)/0.5));  // 0=深夜 1=大白天
+  // 天空颜色: 夜→昼 混合,再叠一点黄昏暖色
+  skyColor.copy(C_NIGHT).lerp(C_DAY, dayF);
+  const dusk = 1 - Math.abs(dayF-0.5)*2;
+  skyColor.lerp(C_DUSK, dusk*0.5);
+  scene.background.copy(skyColor);
+  scene.fog.color.copy(skyColor);
+  // 天穹材质颜色 = 天色(乘上渐变色)
+  skyMesh.material.color.copy(skyColor);
+  // 灯光强度随昼夜
+  sunLight.intensity = 0.15 + dayF*1.15;
+  moonLight.intensity = (1-dayF)*0.38;
+  ambient.intensity = 0.32 + dayF*0.45;
+  // 太阳/月亮位置(绕圈)
+  const R = 620;
+  const sx = Math.sin(ang)*R, sy = -Math.cos(ang)*R;
+  sunSprite.position.set(sx, sy, 40);
+  moonSprite.position.set(-sx, -sy, 40);
+  sunLight.position.set(sx*0.3, sy*0.3, 40);
+  moonLight.position.set(-sx*0.3, -sy*0.3, 40);
+  // 星星天黑渐现,云夜里变暗
+  stars.material.opacity = dayF < 0.35 ? (0.35-dayF)/0.35 : 0;
+  cloudMat.color.setScalar(0.45 + dayF*0.55);
+  // 云整体缓慢平移
+  clouds.position.x += dt*1.3;
+  if(clouds.position.x > 140) clouds.position.x -= 280;
+  // 水流动
+  waterTex.offset.x += dt*0.012;
+  // 时钟 + 天数
+  if(tod < prevTod) dayN++;          // 过了午夜算新一天
+  prevTod = tod;
+  const hh = (tod*24)|0, mm = ((tod*24-hh)*60)|0;
+  clockEl.textContent = (dayF>0.5?'白天':'夜里') + ' 第'+dayN+'天 ' +
+    String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+}
+
+// ---------- 7. 玩家 ----------
+const player = {
+  pos: SPAWN.clone(), vel: new THREE.Vector3(),
+  yaw: 0, pitch: 0,
+  w:0.3, h:1.75, eye:1.62,
+  onGround:false,
+  mode:'creative',      // 'creative' 创造 / 'survival' 生存
+  flying:false,
+  health:20, fallStart:null,
+};
+function solid(x,y,z){ return world.has(vkey(x,y,z)); }
+function inWater(){
+  const p = player.pos;
+  const h = heightAt[(Math.floor(p.z)|0)*W + (Math.floor(p.x)|0)];
+  return p.y <= SEA+0.3 && p.y > h;
+}
+// 碰撞: 脚和头的四角都采样,任一被方块占住就算撞到
+function collide(){
+  const p = player.pos, w = player.w, h = player.h;
+  const fy1 = Math.floor(p.y), fy2 = Math.floor(p.y+h);
+  for(const dy of [fy1, fy2])
+    for(const dx of [-w, w]) for(const dz of [-w, w])
+      if(solid(Math.floor(p.x+dx), dy, Math.floor(p.z+dz))) return true;
+  return false;
+}
+function tryMove(axis, dt){
+  const old = player.pos[axis];
+  player.pos[axis] += player.vel[axis]*dt;
+  if(collide()){
+    player.pos[axis] = old;
+    if(axis==='y'){ if(player.vel.y<0) player.onGround = true; player.vel.y = 0; }
+    else player.vel[axis] = 0;
+  }
+}
+function physStep(dt){
+  const p = player.pos;
+  const sw = inWater();
+  // 水平速度(方向 = 视角朝向); 触屏用摇杆 joy.dx/joy.dy,桌面用 WASD
+  const speed = player.flying ? 11 : 7;
+  const spd = speed * (keys.ControlLeft||keys.ControlRight ? 1.6 : 1) * (sw?0.62:1);
+  const s = Math.sin(player.yaw), c = Math.cos(player.yaw);
+  let mx=0, mz=0;
+  if(isTouch){
+    // 摇杆: dy 向前(上),dx 向右 —— 相对视角旋转得到世界方向
+    mx = -s*joy.dy + c*joy.dx;
+    mz = -c*joy.dy - s*joy.dx;
+  } else {
+    if(keys.KeyW){ mx-=s; mz-=c; } if(keys.KeyS){ mx+=s; mz+=c; }
+    if(keys.KeyA){ mx-=c; mz+=s; } if(keys.KeyD){ mx+=c; mz-=s; }
+  }
+  const len = Math.hypot(mx,mz);
+  if(len>0){ mx/=len; mz/=len; }
+  player.vel.x = mx*spd; player.vel.z = mz*spd;
+  // 竖直
+  if(player.mode==='creative' && player.flying){
+    player.vel.y = (keys.Space?spd:0) + (keys.ShiftLeft||keys.ShiftRight?-spd:0);
+  } else if(sw){
+    player.vel.y -= 6*dt;                  // 水中: 轻下坠
+    if(keys.Space){
+      // 接近水面(脚离水面 0.5 内)或脚踩水底 → 跳跃初速(能跳出水面、跳上岸);
+      // 深水悬空 → 纯上浮(慢慢浮到水面再跳)
+      const nearSurface = p.y > SEA - 0.5;
+      player.vel.y = (nearSurface || player.onGround) ? 7.8 : 3.8;
+    }
+    player.vel.y = Math.max(player.vel.y, -0.6);
+  } else {
+    player.vel.y -= 22*dt;                 // 重力
+    if(keys.Space && player.onGround) player.vel.y = 7.8;
+  }
+  player.onGround = false;
+  // 摔落伤害(生存): 离开地面开始记录,落地结算;水中免摔
+  if(player.mode==='survival'){
+    if(!player.onGround && !player.flying && !sw && player.fallStart===null) player.fallStart = p.y;
+    if(sw) player.fallStart = null;
+  }
+  // 世界边界隐形墙 + 掉出重生
+  p.x = Math.max(0.31, Math.min(W-0.31, p.x));
+  p.z = Math.max(0.31, Math.min(D-0.31, p.z));
+  if(p.y < -30){ respawn(); }
+  // 子步进防穿墙(外循环已按 12ms 切步)
+  tryMove('y',dt); tryMove('x',dt); tryMove('z',dt);
+  // 落地结算摔伤
+  if(player.mode==='survival' && player.onGround && player.fallStart!==null){
+    const dist = player.fallStart - p.y;
+    player.fallStart = null;
+    if(dist > 3.2) hurt(Math.min(10, Math.ceil(dist-3)));
+  }
+  // 脚步声(走 3 米一声)
+  stepAcc += spd*dt;
+  if(player.onGround && !sw && stepAcc > 3){ stepAcc = 0; sStep(); }
+}
+let stepAcc = 0;
+function hurt(n){
+  if(player.mode!=='survival') return;
+  player.health = Math.max(0, player.health - n);
+  updateHealth();
+  flash();
+  sHurt();
+  if(player.health <= 0){
+    msg('你死了!已回到出生点');
+    respawn();
+  }
+}
+function respawn(){
+  player.pos.copy(SPAWN); player.vel.set(0,0,0);
+  player.health = 20; player.flying = false; player.fallStart = null;
+  updateHealth();
+}
+
+// ---------- 8. 交互: DDA 体素拾取 + 挖/放 + 背包 ----------
+// DDA: 像光线一格一格往前爬,第一次撞到方块就是瞄准的方块(比「扫所有方块」快得多)
+const _dir = new THREE.Vector3();
+function pick(){
+  camera.getWorldDirection(_dir);
+  const o = camera.position;
+  let x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z);
+  const sx=_dir.x>0?1:-1, sy=_dir.y>0?1:-1, sz=_dir.z>0?1:-1;
+  const dtx=_dir.x!==0?Math.abs(1/_dir.x):Infinity;
+  const dty=_dir.y!==0?Math.abs(1/_dir.y):Infinity;
+  const dtz=_dir.z!==0?Math.abs(1/_dir.z):Infinity;
+  let tx=_dir.x!==0?(sx>0?(x+1-o.x):(o.x-x))*dtx:Infinity;
+  let ty=_dir.y!==0?(sy>0?(y+1-o.y):(o.y-y))*dty:Infinity;
+  let tz=_dir.z!==0?(sz>0?(z+1-o.z):(o.z-z))*dtz:Infinity;
+  let fx=0, fy=0, fz=0, t=0;
+  for(let i=0; i<96 && t<=8; i++){
+    if(world.has(vkey(x,y,z))) return { x,y,z, adj:[x+fx, y+fy, z+fz] };
+    if(tx<ty && tx<tz){ x+=sx; t=tx; tx+=dtx; fx=-sx; fy=0; fz=0; }
+    else if(ty<tz){ y+=sy; t=ty; ty+=dty; fx=0; fy=-sy; fz=0; }
+    else { z+=sz; t=tz; tz+=dtz; fx=0; fy=0; fz=-sz; }
+  }
+  return null;
+}
+let current = 1;   // 热栏当前选中的方块 id
+function mine(){
+  const hit = pick(); if(!hit) return;
+  const id = world.get(vkey(hit.x, hit.y, hit.z));
+  if(!id || id===8) return;                      // 基岩挖不动
+  removeBlock(hit.x, hit.y, hit.z);
+  if(player.mode==='survival') inventory[DROPS[id]]++;
+  burst(hit.x, hit.y, hit.z, PCOLOR[DROPS[id]] || PCOLOR[id]);
+  sBreak();
+  refreshHotbar();
+}
+function place(){
+  const hit = pick(); if(!hit) return;
+  const [x,y,z] = hit.adj;
+  if(world.has(vkey(x,y,z))) return;
+  // 不能放进自己身体里
+  const p = player.pos;
+  if(Math.floor(p.x)===x && Math.floor(p.z)===z &&
+     (y===Math.floor(p.y) || y===Math.floor(p.y+1))) return;
+  if(player.mode==='survival' && inventory[current]<=0){
+    msg('背包里没有「'+BLOCKS[current].name+'」,先挖一点吧');
+    return;
+  }
+  addBlock(x,y,z,current);
+  if(player.mode==='survival') inventory[current]--;
+  sPlace();
+  refreshHotbar();
+}
+
+// 挖方块溅出的小碎块(简单粒子)
+const PARTS = 240;
+const partsMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16,0.16,0.16),
+  new THREE.MeshBasicMaterial({color:0xffffff}), PARTS);
+partsMesh.frustumCulled = false; partsMesh.count = 0;
+scene.add(partsMesh);
+const tmpColor = new THREE.Color();
+let parts = [];
+function burst(px,py,pz,color){
+  for(let i=0;i<8 && parts.length<PARTS;i++){
+    parts.push({ x:px+0.5, y:py+0.5, z:pz+0.5,
+      vx:(rnd()-0.5)*4, vy:rnd()*4.5+1, vz:(rnd()-0.5)*4,
+      life:1, color:color });
+  }
+}
+function updateParts(dt){
+  for(const p of parts){
+    p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt;
+    p.vy -= 15*dt; p.life -= 2.4*dt;
+  }
+  parts = parts.filter(p => p.life>0);
+  const n = Math.min(parts.length, PARTS);
+  partsMesh.count = n;
+  for(let i=0;i<n;i++){
+    const p = parts[i];
+    dummy.position.set(p.x, p.y, p.z); dummy.updateMatrix();
+    partsMesh.setMatrixAt(i, dummy.matrix);
+    tmpColor.setHex(p.color);
+    partsMesh.setColorAt(i, tmpColor);
+  }
+  if(n>0){ partsMesh.instanceMatrix.needsUpdate = true;
+    if(partsMesh.instanceColor) partsMesh.instanceColor.needsUpdate = true; }
+}
+
+// ---------- 9. 音效(WebAudio 程序合成,零素材) ----------
+let actx = null, master = null, muted = false;
+function ensureAudio(){
+  try{
+    if(!actx){
+      actx = new (window.AudioContext||window.webkitAudioContext)();
+      master = actx.createGain(); master.gain.value = 0.5;
+      master.connect(actx.destination);
+    }
+    if(actx.state === 'suspended') actx.resume();
+  }catch(e){ actx = null; }   // 音频失败绝不影响游戏
+}
+function tone(f0, f1, dur, type, vol){
+  if(!actx || muted) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, actx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(Math.max(1,f1), actx.currentTime+dur);
+  g.gain.setValueAtTime(vol, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime+dur);
+  o.connect(g); g.connect(master);
+  o.start(); o.stop(actx.currentTime+dur);
+}
+function noiseBurst(dur, freq, vol, q){
+  if(!actx || muted) return;
+  const len = (actx.sampleRate*dur)|0;
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = (Math.random()*2-1);
+  const src = actx.createBufferSource(); src.buffer = buf;
+  const f = actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=freq; f.Q.value=q||1;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(vol, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime+dur);
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(); src.stop(actx.currentTime+dur);
+}
+const sBreak  = () => noiseBurst(0.13, 2600, 0.5, 1.2);
+const sPlace  = () => tone(150, 90, 0.08, 'sine', 0.6);
+const sStep   = () => noiseBurst(0.04, 700, 0.16, 2);
+const sHurt   = () => tone(320, 90, 0.2, 'sawtooth', 0.35);
+const sSplash = () => noiseBurst(0.3, 900, 0.4, 1.5);
+
+// ---------- 10. HUD + 背包 ----------
+const inventory = new Array(10).fill(0);   // 下标 = 方块 id(生存模式计数)
+const hudEl = document.getElementById('hud');
+const clockEl = document.createElement('span');
+clockEl.id = 'clock'; hudEl.appendChild(clockEl);
+const healthEl = document.getElementById('health');
+const coordsEl = document.getElementById('coords');
+const msgEl = document.getElementById('msg');
+const targetEl = document.getElementById('crosshair').querySelector('span');
+const modeBadge = document.getElementById('modeBadge');
+
+function updateHealth(){
+  healthEl.textContent = '';
+  for(let i=0;i<10;i++){
+    const h = document.createElement('span');
+    h.textContent = '♥';
+    h.style.color = (i*2 < player.health) ? '#f44' : '#333';
+    h.style.textShadow = '0 0 2px #000';
+    healthEl.appendChild(h);
+  }
+}
+let msgTimer = null;
+function msg(t){
+  msgEl.textContent = t; msgEl.classList.add('show');
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(()=> msgEl.classList.remove('show'), 2600);
+}
+// 热栏: 9 格
+const hotbar = document.getElementById('hotbar');
+const hotbarSlots = [];
+for(let i=1;i<BLOCKS.length;i++){
+  const s = document.createElement('div');
+  s.className = 'slot';
+  const cv = document.createElement('canvas'); cv.width=cv.height=26;
+  const g = cv.getContext('2d'); g.imageSmoothingEnabled = false;
+  const tile = BLOCKS[i].side;
+  g.drawImage(atlas, (tile%COLS)*16, ((tile/COLS)|0)*16, 16,16, 0,0, 26,26);
+  const n = document.createElement('div'); n.className='n'; n.textContent = i+' '+BLOCKS[i].name;
+  const cnt = document.createElement('div'); cnt.className='cnt';
+  s.appendChild(cv); s.appendChild(n); s.appendChild(cnt);
+  s.title = BLOCKS[i].name;
+  hotbar.appendChild(s);
+  hotbarSlots.push({ el:s, cnt });
+}
+function select(i){
+  current = i+1;
+  hotbarSlots.forEach((s,j)=> s.el.classList.toggle('active', j===i));
+}
+function refreshHotbar(){
+  hotbarSlots.forEach((s, j)=>{
+    const id = j+1;
+    s.cnt.textContent = (player.mode==='creative') ? '∞' : inventory[id];
+    s.el.classList.toggle('disabled', player.mode==='survival' && inventory[id]<=0);
+  });
+}
+select(0);
+refreshHotbar();
+function setMode(m){
+  player.mode = m;
+  modeBadge.textContent = m==='creative' ? '创造' : '生存';
+  modeBadge.className = 'mode ' + m;
+  if(m==='survival'){ player.flying = false; player.fallStart = null; }
+  refreshHotbar();
+  msg(m==='creative' ? '已切换: 创造模式(无限方块·可飞行·不摔伤)' : '已切换: 生存模式(挖方块收集·小心摔伤·夜里会黑)');
+}
+function toggleMode(){ setMode(player.mode==='creative' ? 'survival' : 'creative'); }
+
+// 选中方块线框
+const hlBox = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002,1.002,1.002)),
+  new THREE.LineBasicMaterial({color:0x000000}));
+hlBox.visible = false; scene.add(hlBox);
+
+// 受伤红屏
+const flashEl = document.createElement('div');
+flashEl.style.cssText = 'position:fixed;inset:0;background:#f00;opacity:0;pointer-events:none;z-index:50;';
+document.body.appendChild(flashEl);
+function flash(){
+  flashEl.style.transition='none'; flashEl.style.opacity='0.4';
+  requestAnimationFrame(()=>{ flashEl.style.transition='opacity .6s'; flashEl.style.opacity='0'; });
+}
+
+// ---------- 输入 ----------
+const keys = {};
+// 触屏检测: 有触摸事件 && 无精细鼠标(手机/平板)。桌面触屏(如笔记本触摸板)不算,仍用鼠标
+// 可 URL 强制:  ?touch=1  强制触屏模式,  ?touch=0  强制桌面(测试/特殊设备用)
+const forceTouch = (new URLSearchParams(location.search)).get('touch');
+const isTouch = forceTouch === '1' ? true
+  : forceTouch === '0' ? false
+  : (('ontouchstart' in window) && matchMedia('(pointer: coarse)').matches)
+    || (navigator.maxTouchPoints > 0 && !matchMedia('(hover: hover)').matches);
+if(isTouch) document.body.classList.add('touched');
+
+// 触屏: 点热栏选方块(桌面用 1-9/滚轮,手机没有这两样,只能点格子)
+if(isTouch){
+  hotbarSlots.forEach((s,j)=> s.el.addEventListener('touchstart', e=>{
+    e.preventDefault(); select(j);
+  }, {passive:false}));
+}
+
+// 触屏: 移动摇杆(左下)。拖动幅度决定移动方向与速度
+let joy = { active:false, dx:0, dy:0 };
+const joyZone = document.getElementById('joystick-zone');
+const joyBase = document.getElementById('joystick-base');
+const joyKnob = document.getElementById('joystick-knob');
+const joyRect = () => joyBase.getBoundingClientRect();
+joyZone.addEventListener('touchstart', e=>{
+  const t = e.changedTouches[0];
+  const r = joyRect();
+  joy.active = true; joy.dx = 0; joy.dy = 0;
+  joyKnob.style.left = '50%'; joyKnob.style.top = '50%';
+  e.preventDefault();
+}, {passive:false});
+joyZone.addEventListener('touchmove', e=>{
+  if(!joy.active) return;
+  const t = e.changedTouches[0];
+  const r = joyRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  let dx = t.clientX - cx, dy = t.clientY - cy;
+  const len = Math.hypot(dx,dy), max = r.width/2;
+  if(len > max){ dx = dx/len*max; dy = dy/len*max; }
+  joy.dx = dx/max; joy.dy = -dy/max;   // dy 取反: 屏幕 y 向下,向上推 dy 应为正(=前进)
+  joyKnob.style.left = (50 + joy.dx*40)+'%';
+  joyKnob.style.top  = (50 - joy.dy*40)+'%';
+  e.preventDefault();
+}, {passive:false});
+function joyEnd(){ joy.active = false; joy.dx = 0; joy.dy = 0;
+  joyKnob.style.left = '50%'; joyKnob.style.top = '50%'; }
+joyZone.addEventListener('touchend', joyEnd);
+joyZone.addEventListener('touchcancel', joyEnd);
+
+// 触屏: 视角区(右下)。只负责「双指 = 放方块」;转视角交给右摇杆(见下)
+let look = { id:null, secondId:null };
+const lookZone = document.getElementById('look-zone');
+lookZone.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  if(look.id === null){ look.id = t.identifier; }
+  else if(look.secondId === null){ look.secondId = t.identifier; place(); }  // 双指=放方块
+}, {passive:false});
+lookZone.addEventListener('touchmove', e=>{
+  e.preventDefault();   // 只挡浏览器手势(下拉刷新/返回),不再转视角
+}, {passive:false});
+function lookEnd(e){
+  for(const t of e.changedTouches){
+    if(t.identifier === look.id) look.id = null;
+    if(t.identifier === look.secondId) look.secondId = null;
+  }
+}
+lookZone.addEventListener('touchend', lookEnd);
+lookZone.addEventListener('touchcancel', lookEnd);
+
+// 触屏: 右摇杆转视角(MC PE 双摇杆布局)。持续输入: 摇杆保持偏置,主循环每帧转视角
+let lookJoy = { active:false, dx:0, dy:0 };
+const ljZone = document.getElementById('look-joystick-zone');
+const ljBase = document.getElementById('look-joystick-base');
+const ljKnob = document.getElementById('look-joystick-knob');
+const ljRect = () => ljBase.getBoundingClientRect();
+ljZone.addEventListener('touchstart', e=>{
+  const t = e.changedTouches[0];
+  const r = ljRect();
+  lookJoy.active = true; lookJoy.dx = 0; lookJoy.dy = 0;
+  ljKnob.style.left = '50%'; ljKnob.style.top = '50%';
+  e.preventDefault();
+}, {passive:false});
+ljZone.addEventListener('touchmove', e=>{
+  if(!lookJoy.active) return;
+  const t = e.changedTouches[0];
+  const r = ljRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  let dx = t.clientX - cx, dy = t.clientY - cy;
+  const len = Math.hypot(dx,dy), max = r.width/2;
+  if(len > max){ dx = dx/len*max; dy = dy/len*max; }
+  lookJoy.dx = dx/max; lookJoy.dy = -dy/max;   // dy 取反: 屏幕 y 向下,上推 dy 为正
+  ljKnob.style.left = (50 + lookJoy.dx*40)+'%';
+  ljKnob.style.top  = (50 - lookJoy.dy*40)+'%';
+  e.preventDefault();
+}, {passive:false});
+function ljEnd(){ lookJoy.active = false; lookJoy.dx = 0; lookJoy.dy = 0;
+  ljKnob.style.left = '50%'; ljKnob.style.top = '50%'; }
+ljZone.addEventListener('touchend', ljEnd);
+ljZone.addEventListener('touchcancel', ljEnd);
+
+// 触屏: 动作按钮(跳 / 挖 / 放)
+const btnJump = document.getElementById('btn-jump');
+const btnMine = document.getElementById('btn-mine');
+const btnPlace = document.getElementById('btn-place');
+btnJump.addEventListener('touchstart', e=>{ e.preventDefault(); if(player.mode==='creative'&&player.flying) player.flying=false; keys.Space = true; }, {passive:false});
+btnJump.addEventListener('touchend',   e=>{ e.preventDefault(); keys.Space = false; }, {passive:false});
+btnMine.addEventListener('touchstart', e=>{ e.preventDefault(); mine(); }, {passive:false});
+btnPlace.addEventListener('touchstart', e=>{ e.preventDefault(); place(); }, {passive:false});
+
+addEventListener('keydown', e=>{
+  keys[e.code] = true;
+  if(/^Digit[1-9]$/.test(e.code)) select(+e.code.slice(5)-1);
+  if(e.code==='KeyC') toggleMode();
+  if(e.code==='KeyF' && player.mode==='creative'){ player.flying = !player.flying; msg(player.flying?'✈ 飞行中(空格上升/Shift下降)':'落地'); }
+  if(e.code==='KeyM'){ muted = !muted; document.getElementById('sound').textContent = muted?'🔇':'🔊'; }
+  e.preventDefault();
+});
+addEventListener('keyup', e=> keys[e.code]=false);
+addEventListener('mousemove', e=>{
+  if(document.pointerLockElement !== renderer.domElement) return;
+  player.yaw   -= e.movementX*0.0025;
+  player.pitch -= e.movementY*0.0025;
+  player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch));
+});
+addEventListener('mousedown', e=>{
+  if(document.pointerLockElement !== renderer.domElement) return;
+  if(e.button===0) mine(); else if(e.button===2) place();
+});
+addEventListener('contextmenu', e=> e.preventDefault());
+addEventListener('wheel', e=>{
+  const d = e.deltaY>0 ? 1 : -1;
+  select((current-1+d+BLOCKS.length-1) % (BLOCKS.length-1));
+});
+// 开始/继续
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+function requestLock(){
+  ensureAudio();
+  if(isTouch){
+    // 触屏: 不锁鼠标,直接全屏 + 开始游戏
+    const fs = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+    try{ if(fs) fs.call(document.documentElement); }catch(e){}
+    // iOS PWA(添加到主屏幕后全屏运行)真锁横屏;普通标签页不支持会 reject,忽略即可(竖屏有提示层兜底)
+    try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{}); }catch(e){}
+    overlay.style.display = 'none';
+    return;
+  }
+  try{
+    const pl = renderer.domElement.requestPointerLock();
+    // requestPointerLock 返回 Promise,锁失败(浏览器限制)别让未处理拒绝炸出 "Script error"
+    if(pl && pl.catch) pl.catch(()=>{
+      document.querySelector('#overlay .sub').textContent = '⚠ 无法锁定鼠标(浏览器限制)。请用 Chrome / Safari / Edge 打开本页再试';
+    });
+  }catch(e){
+    document.querySelector('#overlay .sub').textContent = '⚠ 无法锁定鼠标。请用 Chrome / Safari / Edge 打开本页再试';
+  }
+}
+startBtn.addEventListener('click', requestLock);
+addEventListener('pointerlockchange', ()=>{
+  const locked = document.pointerLockElement === renderer.domElement;
+  overlay.style.display = locked ? 'none' : 'flex';
+  if(!locked){
+    document.getElementById('startBtn').textContent = '已暂停 · 点击继续';
+  }
+});
+// 触屏: 全屏退出 → 显示暂停遮罩
+document.addEventListener('fullscreenchange', ()=>{
+  if(isTouch && !document.fullscreenElement && overlay.style.display !== 'flex'){
+    overlay.style.display = 'flex';
+    document.getElementById('startBtn').textContent = '已暂停 · 点击继续';
+  }
+});
+// 触屏: 开始前显示触屏帮助
+if(isTouch){
+  document.getElementById('touch-help').style.display = '';
+  document.getElementById('startBtn').textContent = '点击开始游戏';
+}
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- 主循环 ----------
+const dbgEl = document.getElementById('dbg');
+let last = performance.now(), fpsEma = 60, lastDbg = 0, lastCoords = 0;
+function loop(now){
+  requestAnimationFrame(loop);
+  let dt = (now-last)/1000; last = now;
+  if(!(dt>0) || dt>0.5) dt = 0.016;          // 切回标签页防巨型帧
+  fpsEma = fpsEma*0.95 + (1/dt)*0.05;
+
+  skyStep(dt);
+  // 右摇杆转视角(持续输入,每帧生效;满偏 2.8 rad/s ≈ 160°/秒)
+  if(isTouch && lookJoy.active){
+    const k = 2.8 * dt;
+    player.yaw   -= lookJoy.dx * k;
+    player.pitch += lookJoy.dy * k;
+    player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch));
+  }
+  // 子步进物理: 每步最多 12ms,任何帧率都不穿墙
+  const steps = Math.max(1, Math.ceil(dt/0.012));
+  const sdt = dt/steps;
+  for(let i=0;i<steps;i++) physStep(sdt);
+  updateParts(dt);
+
+  // 相机跟随玩家
+  camera.position.copy(player.pos); camera.position.y += player.eye;
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
+
+  // 瞄准高亮
+  const hit = pick();
+  hlBox.visible = !!hit;
+  if(hit){
+    hlBox.position.set(hit.x+0.5, hit.y+0.5, hit.z+0.5);
+    targetEl.textContent = BLOCKS[world.get(vkey(hit.x,hit.y,hit.z))].name;
+  } else targetEl.textContent = '';
+
+  // HUD 节流更新
+  if(now-lastCoords > 150){
+    lastCoords = now;
+    coordsEl.innerHTML = 'x:'+player.pos.x.toFixed(1)+' y:'+player.pos.y.toFixed(1)+' z:'+player.pos.z.toFixed(1)+
+      '<br>FPS:'+fpsEma.toFixed(0)+' 方块:'+world.size+(player.mode==='creative'?(player.flying?' 飞行':' 创造'):' 生存');
+  }
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(loop);
+// PWA: 注册 service worker(离线缓存 + iOS 全屏锁横屏前置)。加载即注册,失败(如 file://)静默忽略
+if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+// 顶部播放器的 4 个 <span> 顺序: 模式徽章 / 时钟;把时钟挂进 hud
+// (上面的 clockEl 已 append,这里不再重复)
+</script>
+</body>
+</html>
